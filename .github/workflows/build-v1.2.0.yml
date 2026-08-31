@@ -1,6 +1,7 @@
 name: Build and release v1.2.0
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - ".github/workflows/build-v1.2.0.yml"
