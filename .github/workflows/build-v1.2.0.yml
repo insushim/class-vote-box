@@ -1,4 +1,4 @@
-name: Build and release v1.2.0
+name: Build and release v1.2.0 final
 
 on:
   workflow_dispatch:
