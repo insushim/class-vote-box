@@ -1,0 +1,65 @@
+name: Release v1.2.0
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore compiled desktop runtime
+        shell: pwsh
+        run: |
+          $lines = Get-Content ".github/workflows/build-v1.2.0.yml"
+          $start = [Array]::IndexOf($lines, "          `$base64 = @'")
+          $end = [Array]::IndexOf($lines, "          '@", $start + 1)
+          if ($start -lt 0 -or $end -le $start) {
+            throw "Embedded runtime was not found"
+          }
+          $encoded = ($lines[($start + 1)..($end - 1)] -join "") -replace '\s', ''
+          $bytes = [Convert]::FromBase64String($encoded)
+          [IO.File]::WriteAllBytes("desktop-runtime.tar.gz", $bytes)
+          tar -xzf desktop-runtime.tar.gz
+          Remove-Item desktop-runtime.tar.gz
+
+      - name: Install desktop packaging tools
+        run: npm ci --prefix desktop
+
+      - name: Build portable EXE
+        run: npm run package:win --prefix desktop
+
+      - name: Create and verify single-file ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "desktop/release/우리반투표함.exe" -DestinationPath "default.zip" -CompressionLevel Optimal
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead("default.zip")
+          if ($zip.Entries.Count -ne 1 -or $zip.Entries[0].Name -ne "우리반투표함.exe") {
+            $zip.Dispose()
+            throw "ZIP must contain exactly one 우리반투표함.exe"
+          }
+          $zip.Dispose()
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $notes = "후보 최대 20명, 학급·전교 투표 선택, 전교 최대 3,000명, 후보 9명 이하는 숫자키 즉시 투표, 후보 10명 이상은 번호와 Enter, 일반·빠르게·초고속 개표를 지원합니다. ZIP 안에는 Windows 64비트 단일 우리반투표함.exe 파일만 들어 있습니다."
+          if (gh release view v1.2.0 2>$null) {
+            gh release upload v1.2.0 default.zip --clobber
+            gh release edit v1.2.0 --title "우리 반 투표함 v1.2.0" --notes $notes --latest
+          } else {
+            gh release create v1.2.0 default.zip --title "우리 반 투표함 v1.2.0" --notes $notes --latest
+          }
+
+      - name: Keep build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 우리반투표함-v1.2.0
+          path: default.zip
